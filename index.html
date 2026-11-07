@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Happy Birthday!</title>
+<style>
+  :root {
+    --bg: #fdf6ee;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #111118; }
+  }
+  :root[data-theme="dark"] { --bg: #111118; }
+
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+    cursor: crosshair;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ✏️ YOUR MESSAGE GOES IN THE h1 BELOW */
+  h1 {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    padding: 0 1rem;
+    text-align: center;
+    font-size: clamp(2rem, 9vw, 6rem);
+    line-height: 1.15;
+    user-select: none;
+    pointer-events: none;
+    animation: colors 6s linear infinite;
+  }
+
+  @keyframes colors {
+    0%   { color: hsl(0 90% 55%); }
+    17%  { color: hsl(60 90% 50%); }
+    33%  { color: hsl(120 80% 45%); }
+    50%  { color: hsl(180 85% 45%); }
+    67%  { color: hsl(240 90% 65%); }
+    83%  { color: hsl(300 85% 55%); }
+    100% { color: hsl(360 90% 55%); }
+  }
+
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* final silent picture screen */
+  #final {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    cursor: default;
+  }
+  #final[hidden] { display: none; }
+  #final img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+</style>
+</head>
+<body>
+
+<h1>HAPPY BIRTHDAY NIYA!!!</h1>
+<canvas id="c"></canvas>
+
+<!-- 🎵 YOUR SONG: put your audio file in the same folder as this file and set the name in src below -->
+<audio id="song" src="song.webm" loop preload="auto"></audio>
+
+<div id="final" hidden><img id="final-img" alt=""></div>
+
+<script>
+  /* =====================================================================
+     ⚙ SETTINGS: everything you might want to tweak is in this block
+     ===================================================================== */
+
+  // Confetti: how many pieces each cannon fires per click (there are 2 cannons).
+  // Lower = less confetti. 0 = none.
+  const CONFETTI_PER_CANNON = 70;
+
+  // Background song volume, from 0 (silent) to 1 (full).
+  const SONG_VOLUME = 1;
+
+  // How many click sounds are picked per click (a random number between these two).
+  const MIN_PLAY = 1;
+  const MAX_PLAY = 1;
+
+  // Chance that each picked sound actually plays: 1 = always, 0.5 = half the time, 0 = never.
+  const SOUND_CHANCE = 1;
+
+  // Your click sounds. For each one:
+  //   volume: 0 (silent) to 1 (full). Lower it for sounds that are too loud.
+  //   weight: how likely it is to be picked compared to the others.
+  //           1 = normal, 0.5 = half as likely, 2 = twice as likely, 0 = never.
+  const SOUNDS = [
+    { file: "1.mp3",   volume: 0.4, weight: 1 },
+    { file: "2.mkv",   volume: 0.4, weight: 1 },
+    { file: "3.webm",  volume: 0.4, weight: 1 },
+    { file: "4.webm",  volume: 0.4, weight: 1 },
+    { file: "5.webm",  volume: 0.4, weight: 1 },
+    { file: "6.webm",  volume: 0.4, weight: 1 },
+    { file: "7.mp3",   volume: 0.4, weight: 1 },
+    { file: "8.webm",  volume: 0.4, weight: 1 },
+    { file: "9.mp3",   volume: 0.4, weight: 1 },
+    { file: "10.webm", volume: 0.4, weight: 1 },
+    { file: "11.webm", volume: 0.2, weight: 1 },
+    { file: "12.webm", volume: 0.4, weight: 1 },
+    { file: "13.webm", volume: 0.4, weight: 1 },
+    { file: "14.mkv",  volume: 0.4, weight: 1 }
+  ];
+
+  // 🖼 THE FINAL SCREEN: at one point everything stops (song, sounds, confetti, text)
+  // and this picture is shown. Put the picture in the same folder
+  // as this file and set its name here.
+  const FINAL_PICTURE = "hi.png";
+
+  // When does it happen? Set either one (or both, whichever comes first). 0 = off.
+  // The click that reaches this number is the one that stops everything.
+  const STOP_AFTER_CLICKS = 100;
+  // Seconds after the first click.
+  const STOP_AFTER_SECONDS = 0;
+
+  // 🎵 The track that plays over the final picture (same folder as this file).
+  // Leave it as "" for no audio on the final screen.
+  const FINAL_TRACK = "hi.m4a";
+  const FINAL_TRACK_VOLUME = 1;   // 0 (silent) to 1 (full)
+
+  // 🚪 When the final track ends, the page quits itself. This is how many extra
+  // seconds the picture stays on screen after the track ends (0 = quit right away).
+  // With no final track (or if it fails to load), this is the time the picture stays up.
+  const QUIT_DELAY_SECONDS = 0;
+
+  /* ===================== end of settings ===================== */
+
+
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  let W, H, dpr;
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  const particles = [];
+  let running = false;
+
+  function burst(x, y) {
+    // two cannons, bottom-left and bottom-right, both aimed at the pointer
+    const sources = [{ x: 0, y: H }, { x: W, y: H }];
+    for (const s of sources) {
+      const base = Math.atan2(y - s.y, x - s.x);
+      const dist = Math.hypot(x - s.x, y - s.y);
+      for (let i = 0; i < CONFETTI_PER_CANNON; i++) {
+        const angle = base + (Math.random() - 0.5) * 0.55;
+        const speed = Math.max(6, dist / 50) * (0.6 + Math.random() * 0.7);
+        particles.push({
+          x: s.x, y: s.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          w: 6 + Math.random() * 6,
+          h: 3 + Math.random() * 4,
+          rot: Math.random() * Math.PI * 2,
+          vr: (Math.random() - 0.5) * 0.4,
+          color: "hsl(" + Math.floor(Math.random() * 360) + " 90% 55%)",
+          life: 1,
+          decay: 0.006 + Math.random() * 0.01
+        });
+      }
+    }
+    if (!running) {
+      running = true;
+      requestAnimationFrame(tick);
+    }
+  }
+
+  function tick() {
+    ctx.clearRect(0, 0, W, H);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.vx *= 0.985;
+      p.vy = p.vy * 0.985 + 0.15; // drag + gravity
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      p.life -= p.decay;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, p.life * 1.5);
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    if (particles.length) {
+      requestAnimationFrame(tick);
+    } else {
+      running = false;
+    }
+  }
+
+  let stopped = false;          // becomes true once the final screen is shown
+  const activeSounds = [];      // click sounds that are currently playing
+
+  // load the click sounds ahead of time so they start instantly
+  const loaded = SOUNDS.map(function (s) {
+    const a = new Audio(s.file);
+    a.preload = "auto";
+    return { audio: a, volume: s.volume, weight: s.weight };
+  });
+
+  function playSounds() {
+    const count = MIN_PLAY + Math.floor(Math.random() * (MAX_PLAY - MIN_PLAY + 1));
+    const pool = loaded.filter(function (s) { return s.weight > 0; });
+
+    for (let n = 0; n < count && pool.length; n++) {
+      // weighted random pick (without picking the same sound twice in one click)
+      let total = 0;
+      pool.forEach(function (s) { total += s.weight; });
+      let r = Math.random() * total;
+      let idx = 0;
+      while (idx < pool.length - 1 && r >= pool[idx].weight) {
+        r -= pool[idx].weight;
+        idx++;
+      }
+      const picked = pool.splice(idx, 1)[0];
+
+      if (Math.random() >= SOUND_CHANCE) continue;
+
+      // clone so quick repeated clicks overlap instead of cutting each other off
+      const copy = picked.audio.cloneNode();
+      copy.volume = Math.max(0, Math.min(1, picked.volume));
+      activeSounds.push(copy);
+      copy.addEventListener("ended", function () {
+        const i = activeSounds.indexOf(copy);
+        if (i !== -1) activeSounds.splice(i, 1);
+      });
+      copy.play().then(function () {
+        if (stopped) copy.pause(); // in case it started just as everything stopped
+      }).catch(function () {});
+    }
+  }
+
+  const song = document.getElementById("song");
+  song.volume = Math.max(0, Math.min(1, SONG_VOLUME));
+  let songStarted = false;
+
+  // load the final picture now so it appears instantly later
+  document.getElementById("final-img").src = FINAL_PICTURE;
+
+  let clickCount = 0;
+  let stopTimer = null;
+
+  // Browsers only let a page close itself if the page was opened by a script,
+  // which isn't the case for a link someone clicked. So we try to close the tab,
+  // and if that is refused we replace the page with a blank one.
+  function quitSite() {
+    try { window.close(); } catch (err) {}
+    setTimeout(function () { location.replace("about:blank"); }, 200);
+  }
+
+  // plays the final track, then quits when it ends
+  function startFinalTrack() {
+    let done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      setTimeout(quitSite, QUIT_DELAY_SECONDS * 1000);
+    }
+    if (!FINAL_TRACK) { finish(); return; }
+    // reuse the song element: the browser already allows it to play sound
+    song.loop = false;
+    song.src = FINAL_TRACK;
+    song.volume = Math.max(0, Math.min(1, FINAL_TRACK_VOLUME));
+    song.addEventListener("ended", finish, { once: true });
+    song.addEventListener("error", finish, { once: true });
+    song.play().catch(finish);
+  }
+
+  function stopEverything() {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(stopTimer);
+    song.pause();
+    activeSounds.forEach(function (a) { a.pause(); });
+    activeSounds.length = 0;
+    particles.length = 0;
+    ctx.clearRect(0, 0, W, H);
+    document.querySelector("h1").hidden = true;   // also stops the colour animation
+    canvas.style.display = "none";
+    document.getElementById("final").hidden = false;
+    startFinalTrack();
+  }
+
+  window.addEventListener("pointerdown", function (e) {
+    if (stopped) return;
+    clickCount++;
+    if (STOP_AFTER_CLICKS > 0 && clickCount >= STOP_AFTER_CLICKS) {
+      stopEverything();
+      return;
+    }
+    // browsers only allow audio after a user interaction, so the song starts on the first click
+    if (!songStarted) {
+      songStarted = true;
+      song.play().then(function () {
+        if (stopped) song.pause();
+      }).catch(function () { songStarted = false; });
+      if (STOP_AFTER_SECONDS > 0) {
+        stopTimer = setTimeout(stopEverything, STOP_AFTER_SECONDS * 1000);
+      }
+    }
+    playSounds();
+    burst(e.clientX, e.clientY);
+  });
+</script>
+</body>
+</html>
